@@ -1,0 +1,54 @@
+# pd-bench 실험 매트릭스 예시
+# 실행: python run_sweep.py --config sweep_example.yaml
+
+model: Qwen/Qwen3-8B          # 서버의 --served-model-name 과 동일해야 함
+tokenizer: Qwen/Qwen3-8B      # 길이 제어/토큰 단위 비교용 (없으면 단어 수 근사)
+api: completions              # completions | chat
+out_dir: results
+overwrite: false              # 이미 있는 결과는 건너뜀 (중단 후 재개 가능)
+baseline: vllm                # 출력 비교 기준 타겟
+
+targets:
+  - name: vllm                # 베이스라인: 일반 vLLM (P/D 한 인스턴스, GPU 수는 PD 의 P+D 합과 맞추는 것을 권장)
+    url: http://localhost:8000
+    metrics_urls: [http://localhost:8000]
+  - name: pd                  # PD: proxy 로 요청, /metrics 는 P/D 각각
+    url: http://localhost:9000
+    metrics_urls: [http://localhost:8100, http://localhost:8200]
+
+perf:
+  qps: [1, 2, 4, 8, 16]
+  repeats: 3
+  warmup: 8
+  reset_cache: true           # 서버를 VLLM_SERVER_DEV_MODE=1 로 띄워야 동작
+  history_mode: generated
+  slo_ttft_ms: 2000
+  slo_tpot_ms: 50
+
+# 축 1: prefix 비율 (single-turn)  /  축 2: multi-turn 유무
+workloads:
+  - name: st_p0
+    args: {turns: 1, num_sessions: 400, input_len: 2048, output_len: 256, prefix_ratio: 0.0}
+  - name: st_p50
+    args: {turns: 1, num_sessions: 400, input_len: 2048, output_len: 256, prefix_ratio: 0.5, num_prefix_groups: 8}
+  - name: st_p90
+    args: {turns: 1, num_sessions: 400, input_len: 2048, output_len: 256, prefix_ratio: 0.9, num_prefix_groups: 8}
+  - name: mt5_p0
+    args: {turns: 5, num_sessions: 100, input_len: 1024, turn_input_len: 256, output_len: 256,
+           prefix_ratio: 0.0, think_time: 1.0}
+    max_concurrency: 32
+  - name: mt5_p50
+    args: {turns: 5, num_sessions: 100, input_len: 1024, turn_input_len: 256, output_len: 256,
+           prefix_ratio: 0.5, num_prefix_groups: 4, think_time: 1.0}
+    max_concurrency: 32
+  # 실제 트레이스 (Mooncake 공개 트레이스를 받아서 경로 지정)
+  # - name: mooncake_conv
+  #   args: {mode: mooncake, trace: traces/conversation_trace.jsonl, block_size: 512, max_requests: 2000, time_scale: 1.0}
+  #   use_trace_timestamps: true
+  #   qps: [inf]
+
+accuracy:
+  - {task: gsm8k, mode: single, num_samples: 500, concurrency: 64}
+  - {task: gsm8k, mode: multi, num_samples: 400, turns: 4, concurrency: 32}
+  - {task: niah, mode: single, context_len: 16000, num_contexts: 20, needles_per_context: 5, concurrency: 32}
+  - {task: niah, mode: multi, context_len: 16000, num_contexts: 20, needles_per_context: 5, concurrency: 16}

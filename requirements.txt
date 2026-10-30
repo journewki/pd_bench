@@ -1,0 +1,7 @@
+aiohttp>=3.9
+pyyaml
+matplotlib
+transformers      # --tokenizer 사용 시 (실서버에서는 필수 권장)
+datasets          # GSM8K 자동 다운로드 시 (오프라인이면 --data-path)
+# 선택: AIPerf 교차 검증
+# aiperf>=0.13
